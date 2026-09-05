@@ -25,6 +25,29 @@ function requirement(name, direction, type, controlId, description) {
   return { name, direction, type, controlId, description };
 }
 
+export function planCrestronContractEditor(contractRequirements) {
+  const counters = { digital: 0, analog: 0, serial: 0 };
+  const joinKindByType = {
+    boolean: 'digital',
+    number: 'analog',
+    string: 'serial'
+  };
+
+  return contractRequirements.map((item) => {
+    const joinKind = joinKindByType[item.type];
+    if (!joinKind) throw new Error(`Unsupported Contract Editor signal type: ${item.type}`);
+
+    counters[joinKind] += 1;
+    return {
+      ...item,
+      signalRole: item.direction === 'ui-to-control' ? 'event' : 'state',
+      joinKind,
+      suggestedJoin: counters[joinKind],
+      allocationStatus: 'suggested-not-exported'
+    };
+  });
+}
+
 export function adaptSemanticUiToCrestronCh5(semanticUi) {
   const contractRequirements = [];
   const emulatorCues = [];
@@ -116,6 +139,7 @@ export function adaptSemanticUiToCrestronCh5(semanticUi) {
     adapterVersion: 1,
     projectId: semanticUi.projectId,
     contractRequirements,
+    contractEditorPlan: planCrestronContractEditor(contractRequirements),
     emulator: {
       cues: emulatorCues,
       onStart: []
