@@ -31,6 +31,9 @@ jobs:
           test -s /tmp/phase0-export/page1-emulator.json
           test -s /tmp/phase0-export/contract-requirements.json
           test -s /tmp/phase0-export/contract-requirements.csv
+          test -s /tmp/phase0-export/contract-editor-plan.json
+          test -s /tmp/phase0-export/contract-editor-plan.csv
+          test -s /tmp/phase0-export/contract-editor-plan.md
       - name: Retain Contract Editor handoff bundle
         uses: actions/upload-artifact@v4
         with:
@@ -85,6 +88,8 @@ jobs:
           test -f phase0-shell/.vscode/emulator-schema.json
           test -f phase0-shell/app/project/components/pages/page1/page1.html
           test -f phase0-shell/app/project/components/pages/page1/page1-emulator.json
+          test -f phase0-shell/app/project/components/pages/page1/page1.js
+          grep -F 'addEmulatorScenarioNoControlSystem' phase0-shell/app/project/components/pages/page1/page1.js
       - name: Inject generated Phase 0 page and emulator
         run: |
           cp /tmp/phase0-export/page1.html /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1.html
@@ -94,6 +99,7 @@ jobs:
       - name: Validate generated emulator against Crestron schema
         run: |
           npx --yes ajv-cli@5 validate \
+            --strict=false \
             -s /tmp/crestron-current/phase0-shell/.vscode/emulator-schema.json \
             -d /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
       - name: Install current template dependencies
