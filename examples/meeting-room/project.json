@@ -1,0 +1,24 @@
+{
+  "id": "meeting-room-101",
+  "name": "Meeting Room 101",
+  "displays": [
+    {
+      "id": "front-display",
+      "name": "Front Display",
+      "power": true,
+      "sources": [
+        { "id": "table-hdmi", "name": "Table HDMI" },
+        { "id": "wireless", "name": "Wireless Presentation" }
+      ]
+    }
+  ],
+  "audioZones": [
+    {
+      "id": "program-audio",
+      "name": "Program Audio",
+      "min": 0,
+      "max": 100,
+      "step": 1
+    }
+  ]
+}
