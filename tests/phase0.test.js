@@ -116,7 +116,13 @@ test('phase 0 validator confirms markup contract and emulator coverage', () => {
   assert.equal(result.ok, true, result.errors.join('\n'));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, []);
-  assert.deepEqual(result.summary, { screens: 1, controls: 4, contractSignals: 10, emulatorCues: 5 });
+  assert.deepEqual(result.summary, {
+    screens: 1,
+    controls: 4,
+    contractSignals: 10,
+    contractEditorRows: 10,
+    emulatorCues: 5
+  });
 });
 
 test('phase 0 validator rejects an unbound generated signal', () => {
