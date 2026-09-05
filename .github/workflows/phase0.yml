@@ -31,6 +31,13 @@ jobs:
           test -s /tmp/phase0-export/page1-emulator.json
           test -s /tmp/phase0-export/contract-requirements.json
           test -s /tmp/phase0-export/contract-requirements.csv
+      - name: Retain Contract Editor handoff bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-crestron-handoff
+          path: /tmp/phase0-export
+          if-no-files-found: error
+          retention-days: 14
 
   crestron-toolchain-smoke:
     runs-on: ubuntu-latest
@@ -75,6 +82,7 @@ jobs:
           cd /tmp/crestron-current
           npm exec --yes --package=@crestron/ch5-shell-utilities-cli@2.19.1 -- ch5-shell-cli create:project --projectName "phase0-shell"
           test -f phase0-shell/package.json
+          test -f phase0-shell/.vscode/emulator-schema.json
           test -f phase0-shell/app/project/components/pages/page1/page1.html
           test -f phase0-shell/app/project/components/pages/page1/page1-emulator.json
       - name: Inject generated Phase 0 page and emulator
@@ -83,6 +91,11 @@ jobs:
           cp /tmp/phase0-export/page1-emulator.json /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
           grep -F 'Room.FrontDisplay.Display.Power.Toggle' /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1.html
           grep -F 'Room.FrontDisplay.Display.Source.SelectWireless' /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
+      - name: Validate generated emulator against Crestron schema
+        run: |
+          npx --yes ajv-cli@5 validate \
+            -s /tmp/crestron-current/phase0-shell/.vscode/emulator-schema.json \
+            -d /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
       - name: Install current template dependencies
         run: |
           cd /tmp/crestron-current/phase0-shell
