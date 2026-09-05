@@ -31,7 +31,34 @@ export function validatePhase0({ project, semanticUi, adapterOutput }) {
     if (!related.some((item) => item.direction === 'control-to-ui')) warnings.push(`Control has no inbound state: ${control.id}`);
   }
 
+  const emulatorCues = adapterOutput?.emulator?.cues ?? [];
+  const emulatorEvents = new Set(emulatorCues.map((cue) => cue.event));
+  const emulatorStates = new Set(
+    emulatorCues.flatMap((cue) => (cue.actions ?? []).map((action) => action.state))
+  );
+
+  for (const item of requirements) {
+    if (item.direction === 'ui-to-control' && !emulatorEvents.has(item.name)) {
+      errors.push(`Crestron emulator does not cover outbound event: ${item.name}`);
+    }
+    if (item.direction === 'control-to-ui' && !emulatorStates.has(item.name)) {
+      errors.push(`Crestron emulator does not produce inbound state: ${item.name}`);
+    }
+  }
+
+  for (const cue of emulatorCues) {
+    if (!validTypes.has(cue.type)) errors.push(`Invalid emulator event type for ${cue.event}: ${cue.type}`);
+    if (!Array.isArray(cue.actions) || cue.actions.length === 0) errors.push(`Emulator cue has no actions: ${cue.event}`);
+    for (const action of cue.actions ?? []) {
+      if (!validTypes.has(action.type)) errors.push(`Invalid emulator action type for ${action.state}: ${action.type}`);
+      if (!['link', 'set', 'toggle', 'pulse', 'increment', 'decrement'].includes(action.logic)) {
+        errors.push(`Unsupported emulator action logic for ${action.state}: ${action.logic}`);
+      }
+    }
+  }
+
   if (!requirements.length) errors.push('Crestron adapter generated no contract requirements.');
+  if (!emulatorCues.length) errors.push('Crestron adapter generated no emulator cues.');
   if (!adapterOutput?.html?.includes('<ch5-')) errors.push('Crestron adapter generated no CH5 components.');
 
   return {
@@ -41,7 +68,8 @@ export function validatePhase0({ project, semanticUi, adapterOutput }) {
     summary: {
       screens: semanticUi?.screens?.length ?? 0,
       controls: controls.length,
-      contractSignals: requirements.length
+      contractSignals: requirements.length,
+      emulatorCues: emulatorCues.length
     }
   };
 }
