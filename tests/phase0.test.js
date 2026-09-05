@@ -30,6 +30,40 @@ test('Crestron adapter produces CH5 bindings and contract requirements', () => {
   assert.match(output.html, /receiveStateValue="Room\.ProgramAudio\.Audio\.Volume\.Value"/);
 });
 
+test('Crestron adapter produces deterministic Contract Editor join suggestions', () => {
+  const semanticUi = compileRoomProject(project);
+  const output = adaptSemanticUiToCrestronCh5(semanticUi);
+
+  assert.equal(output.contractEditorPlan.length, 10);
+  assert.equal(output.contractEditorPlan.filter((item) => item.joinKind === 'digital').length, 8);
+  assert.equal(output.contractEditorPlan.filter((item) => item.joinKind === 'analog').length, 2);
+
+  const powerEvent = output.contractEditorPlan.find((item) => item.name === 'Room.FrontDisplay.Display.Power.Toggle');
+  assert.deepEqual(
+    {
+      signalRole: powerEvent.signalRole,
+      joinKind: powerEvent.joinKind,
+      suggestedJoin: powerEvent.suggestedJoin,
+      allocationStatus: powerEvent.allocationStatus
+    },
+    {
+      signalRole: 'event',
+      joinKind: 'digital',
+      suggestedJoin: 1,
+      allocationStatus: 'suggested-not-exported'
+    }
+  );
+
+  const volumePlan = output.contractEditorPlan.filter((item) => item.joinKind === 'analog');
+  assert.deepEqual(
+    volumePlan.map(({ signalRole, suggestedJoin }) => ({ signalRole, suggestedJoin })),
+    [
+      { signalRole: 'event', suggestedJoin: 1 },
+      { signalRole: 'state', suggestedJoin: 2 }
+    ]
+  );
+});
+
 test('Crestron adapter produces deterministic emulator cues', () => {
   const semanticUi = compileRoomProject(project);
   const output = adaptSemanticUiToCrestronCh5(semanticUi);
