@@ -23,3 +23,29 @@ jobs:
         run: npm test
       - name: Run deterministic demo
         run: npm run demo > /tmp/phase0-output.json
+
+  crestron-toolchain-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install current CH5 utilities CLI
+        run: npm install --no-save @crestron/ch5-utilities-cli@2.19.0
+      - name: Verify CH5 CLI is executable
+        run: npx ch5-cli --help
+      - name: Download and verify official Crestron template archive
+        run: |
+          curl -fsSL -o /tmp/ShellProjects.zip https://siproducts.blob.core.windows.net/ch5-release/ShellProjects.zip
+          unzip -t /tmp/ShellProjects.zip
+          unzip -l /tmp/ShellProjects.zip > /tmp/template-list.txt
+          sed -n '1,80p' /tmp/template-list.txt
+      - name: Prove CH5 archive command works
+        run: |
+          mkdir -p /tmp/ch5-smoke /tmp/ch5-out
+          printf '%s\n' '<!doctype html><html><body>AV Interface AI Phase 0</body></html>' > /tmp/ch5-smoke/index.html
+          npx ch5-cli archive -p phase0-smoke -d /tmp/ch5-smoke -o /tmp/ch5-out
+          test -f /tmp/ch5-out/phase0-smoke.ch5z
+          unzip -l /tmp/ch5-out/phase0-smoke.ch5z
