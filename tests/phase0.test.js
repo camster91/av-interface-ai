@@ -30,7 +30,51 @@ test('Crestron adapter produces CH5 bindings and contract requirements', () => {
   assert.match(output.html, /receiveStateValue="Room\.ProgramAudio\.Audio\.Volume\.Value"/);
 });
 
-test('phase 0 validator confirms every generated signal is represented in markup', () => {
+test('Crestron adapter produces deterministic emulator cues', () => {
+  const semanticUi = compileRoomProject(project);
+  const output = adaptSemanticUiToCrestronCh5(semanticUi);
+
+  assert.equal(output.emulator.cues.length, 5);
+
+  const powerCue = output.emulator.cues.find((cue) => cue.event === 'Room.FrontDisplay.Display.Power.Toggle');
+  assert.deepEqual(powerCue, {
+    type: 'boolean',
+    event: 'Room.FrontDisplay.Display.Power.Toggle',
+    trigger: true,
+    actions: [
+      {
+        state: 'Room.FrontDisplay.Display.Power.IsActive',
+        type: 'boolean',
+        logic: 'toggle'
+      }
+    ]
+  });
+
+  const volumeCue = output.emulator.cues.find((cue) => cue.event === 'Room.ProgramAudio.Audio.Volume.Set');
+  assert.deepEqual(volumeCue, {
+    type: 'number',
+    event: 'Room.ProgramAudio.Audio.Volume.Set',
+    trigger: '&change',
+    actions: [
+      {
+        state: 'Room.ProgramAudio.Audio.Volume.Value',
+        type: 'number',
+        logic: 'link'
+      }
+    ]
+  });
+
+  const wirelessCue = output.emulator.cues.find((cue) => cue.event === 'Room.FrontDisplay.Display.Source.SelectWireless');
+  assert.deepEqual(
+    wirelessCue.actions.map(({ state, logic, value }) => ({ state, logic, value })),
+    [
+      { state: 'Room.FrontDisplay.Display.Source.TableHdmiSelected', logic: 'set', value: false },
+      { state: 'Room.FrontDisplay.Display.Source.WirelessSelected', logic: 'set', value: true }
+    ]
+  );
+});
+
+test('phase 0 validator confirms markup contract and emulator coverage', () => {
   const semanticUi = compileRoomProject(project);
   const adapterOutput = adaptSemanticUiToCrestronCh5(semanticUi);
   const result = validatePhase0({ project, semanticUi, adapterOutput });
@@ -38,7 +82,7 @@ test('phase 0 validator confirms every generated signal is represented in markup
   assert.equal(result.ok, true, result.errors.join('\n'));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, []);
-  assert.deepEqual(result.summary, { screens: 1, controls: 4, contractSignals: 10 });
+  assert.deepEqual(result.summary, { screens: 1, controls: 4, contractSignals: 10, emulatorCues: 5 });
 });
 
 test('phase 0 validator rejects an unbound generated signal', () => {
