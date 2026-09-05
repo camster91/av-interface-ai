@@ -1,0 +1,14 @@
+{
+  "name": "av-interface-ai",
+  "version": "0.0.0-phase0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "demo": "node scripts/run-phase0-demo.js",
+    "export:phase0": "node scripts/export-phase0.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

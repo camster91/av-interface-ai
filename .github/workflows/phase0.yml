@@ -1,0 +1,126 @@
+name: Phase 0 proof
+
+on:
+  push:
+    branches: [main, phase-0-proof]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Run Phase 0 tests
+        run: npm test
+      - name: Run deterministic demo
+        run: npm run demo > /tmp/phase0-output.json
+      - name: Export deterministic integration artifacts
+        run: |
+          npm run export:phase0 -- /tmp/phase0-export
+          test -s /tmp/phase0-export/page1.html
+          test -s /tmp/phase0-export/page1-emulator.json
+          test -s /tmp/phase0-export/contract-requirements.json
+          test -s /tmp/phase0-export/contract-requirements.csv
+          test -s /tmp/phase0-export/contract-editor-plan.json
+          test -s /tmp/phase0-export/contract-editor-plan.csv
+          test -s /tmp/phase0-export/contract-editor-plan.md
+      - name: Retain Contract Editor handoff bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-crestron-handoff
+          path: /tmp/phase0-export
+          if-no-files-found: error
+          retention-days: 14
+
+  crestron-toolchain-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout AV Interface AI
+        uses: actions/checkout@v6
+      - name: Set up current Crestron Node runtime
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - name: Verify current Crestron runtime
+        run: |
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
+      - name: Install current Crestron CLIs
+        run: |
+          npm install --no-save \
+            @crestron/ch5-utilities-cli@2.19.0 \
+            @crestron/ch5-shell-utilities-cli@2.19.1
+      - name: Verify Crestron CLIs
+        run: |
+          npx ch5-cli --help
+          npx ch5-shell-cli --help
+          npx ch5-shell-cli create:project --help
+      - name: Export AV Interface AI Phase 0 artifacts
+        run: |
+          npm run export:phase0 -- /tmp/phase0-export
+          grep -F 'Room.FrontDisplay.Display.Power.Toggle' /tmp/phase0-export/page1.html
+          grep -F 'Room.ProgramAudio.Audio.Volume.Value' /tmp/phase0-export/page1.html
+      - name: Prove standalone CH5 archive command works
+        run: |
+          mkdir -p /tmp/ch5-smoke /tmp/ch5-out
+          printf '%s\n' '<!doctype html><html><body>AV Interface AI Phase 0</body></html>' > /tmp/ch5-smoke/index.html
+          npx ch5-cli archive -p phase0-smoke -d /tmp/ch5-smoke -o /tmp/ch5-out
+          test -f /tmp/ch5-out/phase0-smoke.ch5z
+          unzip -l /tmp/ch5-out/phase0-smoke.ch5z
+      - name: Create current Crestron template project
+        run: |
+          mkdir -p /tmp/crestron-current
+          cd /tmp/crestron-current
+          npm exec --yes --package=@crestron/ch5-shell-utilities-cli@2.19.1 -- ch5-shell-cli create:project --projectName "phase0-shell"
+          test -f phase0-shell/package.json
+          test -f phase0-shell/.vscode/emulator-schema.json
+          test -f phase0-shell/app/project/components/pages/page1/page1.html
+          test -f phase0-shell/app/project/components/pages/page1/page1-emulator.json
+          test -f phase0-shell/app/project/components/pages/page1/page1.js
+          grep -F 'addEmulatorScenarioNoControlSystem' phase0-shell/app/project/components/pages/page1/page1.js
+      - name: Inject generated Phase 0 page and emulator
+        run: |
+          cp /tmp/phase0-export/page1.html /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1.html
+          cp /tmp/phase0-export/page1-emulator.json /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
+          grep -F 'Room.FrontDisplay.Display.Power.Toggle' /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1.html
+          grep -F 'Room.FrontDisplay.Display.Source.SelectWireless' /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
+      - name: Validate generated emulator against Crestron schema
+        run: |
+          npx --yes ajv-cli@5 validate \
+            --strict=false \
+            -s /tmp/crestron-current/phase0-shell/.vscode/emulator-schema.json \
+            -d /tmp/crestron-current/phase0-shell/app/project/components/pages/page1/page1-emulator.json
+      - name: Install current template dependencies
+        run: |
+          cd /tmp/crestron-current/phase0-shell
+          npm install
+      - name: Build generated UI in current Crestron template
+        run: |
+          cd /tmp/crestron-current/phase0-shell
+          npm run build:prod
+          grep -R -F 'Room.FrontDisplay.Display.Power.Toggle' dist/prod/Shell
+          grep -R -F 'Room.ProgramAudio.Audio.Volume.Value' dist/prod/Shell
+      - name: Verify generated emulator round trips in headless browser
+        run: |
+          CHROME_BIN="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME_BIN"
+          CHROME_BIN="$CHROME_BIN" node scripts/verify-crestron-browser.mjs /tmp/crestron-current/phase0-shell/dist/prod/Shell
+      - name: Archive generated UI with template placeholder contract
+        run: |
+          cd /tmp/crestron-current/phase0-shell
+          npm run build:archive
+          CH5Z="$(find dist -type f -name '*.ch5z' | head -n 1)"
+          test -n "$CH5Z"
+          unzip -l "$CH5Z"
