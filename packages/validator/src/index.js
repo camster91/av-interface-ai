@@ -31,6 +31,38 @@ export function validatePhase0({ project, semanticUi, adapterOutput }) {
     if (!related.some((item) => item.direction === 'control-to-ui')) warnings.push(`Control has no inbound state: ${control.id}`);
   }
 
+  const contractEditorPlan = adapterOutput?.contractEditorPlan ?? [];
+  const validJoinKinds = new Set(['digital', 'analog', 'serial']);
+  const validSignalRoles = new Set(['event', 'state']);
+  const plannedNames = new Set(contractEditorPlan.map((item) => item.name));
+  const joinKeys = contractEditorPlan.map((item) => `${item.joinKind}:${item.suggestedJoin}`);
+  const duplicateJoinKeys = joinKeys.filter((key, index) => joinKeys.indexOf(key) !== index);
+
+  if (contractEditorPlan.length !== requirements.length) {
+    errors.push(`Contract Editor plan count (${contractEditorPlan.length}) does not match contract requirement count (${requirements.length}).`);
+  }
+  if (duplicateJoinKeys.length) {
+    errors.push(`Duplicate suggested Contract Editor joins: ${[...new Set(duplicateJoinKeys)].join(', ')}`);
+  }
+
+  for (const requirement of requirements) {
+    if (!plannedNames.has(requirement.name)) {
+      errors.push(`Contract Editor plan is missing signal: ${requirement.name}`);
+    }
+  }
+
+  for (const item of contractEditorPlan) {
+    if (!signalNames.includes(item.name)) errors.push(`Contract Editor plan contains unknown signal: ${item.name}`);
+    if (!validJoinKinds.has(item.joinKind)) errors.push(`Invalid Contract Editor join kind for ${item.name}: ${item.joinKind}`);
+    if (!validSignalRoles.has(item.signalRole)) errors.push(`Invalid Contract Editor signal role for ${item.name}: ${item.signalRole}`);
+    if (!Number.isInteger(item.suggestedJoin) || item.suggestedJoin < 1) {
+      errors.push(`Invalid suggested Contract Editor join for ${item.name}: ${item.suggestedJoin}`);
+    }
+    if (item.allocationStatus !== 'suggested-not-exported') {
+      errors.push(`Contract Editor allocation status must remain suggested-not-exported before real export: ${item.name}`);
+    }
+  }
+
   const emulatorCues = adapterOutput?.emulator?.cues ?? [];
   const emulatorEvents = new Set(emulatorCues.map((cue) => cue.event));
   const emulatorStates = new Set(
@@ -58,6 +90,7 @@ export function validatePhase0({ project, semanticUi, adapterOutput }) {
   }
 
   if (!requirements.length) errors.push('Crestron adapter generated no contract requirements.');
+  if (!contractEditorPlan.length) errors.push('Crestron adapter generated no Contract Editor worksheet.');
   if (!emulatorCues.length) errors.push('Crestron adapter generated no emulator cues.');
   if (!adapterOutput?.html?.includes('<ch5-')) errors.push('Crestron adapter generated no CH5 components.');
 
@@ -69,6 +102,7 @@ export function validatePhase0({ project, semanticUi, adapterOutput }) {
       screens: semanticUi?.screens?.length ?? 0,
       controls: controls.length,
       contractSignals: requirements.length,
+      contractEditorRows: contractEditorPlan.length,
       emulatorCues: emulatorCues.length
     }
   };
