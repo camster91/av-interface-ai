@@ -27,6 +27,7 @@ function requirement(name, direction, type, controlId, description) {
 
 export function adaptSemanticUiToCrestronCh5(semanticUi) {
   const contractRequirements = [];
+  const emulatorCues = [];
   const markup = [];
 
   for (const screen of semanticUi.screens ?? []) {
@@ -43,6 +44,12 @@ export function adaptSemanticUiToCrestronCh5(semanticUi) {
           requirement(eventName, 'ui-to-control', 'boolean', control.id, `Toggle ${control.label}`),
           requirement(stateName, 'control-to-ui', 'boolean', control.id, `Selected state for ${control.label}`)
         );
+        emulatorCues.push({
+          type: 'boolean',
+          event: eventName,
+          trigger: true,
+          actions: [{ state: stateName, type: 'boolean', logic: 'toggle' }]
+        });
         markup.push(`  <ch5-button label="${escapeAttr(control.label)}" sendEventOnClick="${eventName}" receiveStateSelected="${stateName}"></ch5-button>`);
         continue;
       }
@@ -54,22 +61,45 @@ export function adaptSemanticUiToCrestronCh5(semanticUi) {
           requirement(eventName, 'ui-to-control', 'number', control.id, `Set ${control.label}`),
           requirement(stateName, 'control-to-ui', 'number', control.id, `Current ${control.label}`)
         );
+        emulatorCues.push({
+          type: 'number',
+          event: eventName,
+          trigger: '&change',
+          actions: [{ state: stateName, type: 'number', logic: 'link' }]
+        });
         markup.push(`  <label>${escapeAttr(control.label)}</label>`);
-        markup.push(`  <ch5-slider min="${control.min}" max="${control.max}" step="${control.step}" sendEventOnChange="${eventName}" receiveStateValue="${stateName}"></ch5-slider>`);
+        markup.push(`  <ch5-slider aria-label="${escapeAttr(control.label)}" min="${control.min}" max="${control.max}" step="${control.step}" sendEventOnChange="${eventName}" receiveStateValue="${stateName}"></ch5-slider>`);
         continue;
       }
 
       if (control.kind === 'choice') {
-        markup.push(`  <div class="av-choice" aria-label="${escapeAttr(control.label)}">`);
-        for (const option of control.options ?? []) {
+        const optionsWithSignals = (control.options ?? []).map((option) => {
           const optionName = pascal(option.id);
-          const eventName = `${base}.Select${optionName}`;
-          const stateName = `${base}.${optionName}Selected`;
+          return {
+            ...option,
+            eventName: `${base}.Select${optionName}`,
+            stateName: `${base}.${optionName}Selected`
+          };
+        });
+
+        markup.push(`  <div class="av-choice" role="group" aria-label="${escapeAttr(control.label)}">`);
+        for (const option of optionsWithSignals) {
           contractRequirements.push(
-            requirement(eventName, 'ui-to-control', 'boolean', control.id, `Select ${option.label}`),
-            requirement(stateName, 'control-to-ui', 'boolean', control.id, `${option.label} selected state`)
+            requirement(option.eventName, 'ui-to-control', 'boolean', control.id, `Select ${option.label}`),
+            requirement(option.stateName, 'control-to-ui', 'boolean', control.id, `${option.label} selected state`)
           );
-          markup.push(`    <ch5-button label="${escapeAttr(option.label)}" sendEventOnClick="${eventName}" receiveStateSelected="${stateName}"></ch5-button>`);
+          emulatorCues.push({
+            type: 'boolean',
+            event: option.eventName,
+            trigger: true,
+            actions: optionsWithSignals.map((candidate) => ({
+              state: candidate.stateName,
+              type: 'boolean',
+              logic: 'set',
+              value: candidate.id === option.id
+            }))
+          });
+          markup.push(`    <ch5-button label="${escapeAttr(option.label)}" sendEventOnClick="${option.eventName}" receiveStateSelected="${option.stateName}"></ch5-button>`);
         }
         markup.push('  </div>');
         continue;
@@ -86,6 +116,10 @@ export function adaptSemanticUiToCrestronCh5(semanticUi) {
     adapterVersion: 1,
     projectId: semanticUi.projectId,
     contractRequirements,
+    emulator: {
+      cues: emulatorCues,
+      onStart: []
+    },
     html: markup.join('\n')
   };
 }
