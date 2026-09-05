@@ -44,7 +44,7 @@ jobs:
 
   crestron-toolchain-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - name: Checkout AV Interface AI
         uses: actions/checkout@v6
@@ -112,6 +112,11 @@ jobs:
           npm run build:prod
           grep -R -F 'Room.FrontDisplay.Display.Power.Toggle' dist/prod/Shell
           grep -R -F 'Room.ProgramAudio.Audio.Volume.Value' dist/prod/Shell
+      - name: Verify generated emulator round trips in headless browser
+        run: |
+          CHROME_BIN="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME_BIN"
+          CHROME_BIN="$CHROME_BIN" node scripts/verify-crestron-browser.mjs /tmp/crestron-current/phase0-shell/dist/prod/Shell
       - name: Archive generated UI with template placeholder contract
         run: |
           cd /tmp/crestron-current/phase0-shell
