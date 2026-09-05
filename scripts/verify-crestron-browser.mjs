@@ -27,8 +27,23 @@ async function waitFor(check, description, attempts = 120, interval = 250) {
   throw new Error(`Timed out waiting for ${description}${lastError ? `: ${lastError.message}` : ''}`);
 }
 
+async function stopProcess(child) {
+  if (!child || child.exitCode !== null) return;
+  const exited = new Promise((resolvePromise) => child.once('exit', resolvePromise));
+  child.kill('SIGTERM');
+  await Promise.race([exited, sleep(1500)]);
+  if (child.exitCode === null) {
+    child.kill('SIGKILL');
+    await Promise.race([exited, sleep(1000)]);
+  }
+}
+
 const profilePath = '/tmp/av-interface-ai-phase0-chrome';
-rmSync(profilePath, { recursive: true, force: true });
+try {
+  rmSync(profilePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+} catch {
+  // A stale browser profile should not prevent a fresh isolated run.
+}
 
 const server = spawn(
   'python3',
@@ -61,14 +76,14 @@ try {
     { stdio: ['ignore', 'ignore', 'inherit'] }
   );
 
-  const targets = await waitFor(async () => {
+  const target = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debuggingPort}/json/list`);
     if (!response.ok) return null;
     const items = await response.json();
     return items.find((item) => item.type === 'page' && item.url.startsWith(pageUrl)) ?? null;
   }, 'Chrome DevTools page target');
 
-  socket = new WebSocket(targets.webSocketDebuggerUrl);
+  socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolvePromise, rejectPromise) => {
     socket.addEventListener('open', resolvePromise, { once: true });
     socket.addEventListener('error', rejectPromise, { once: true });
@@ -106,16 +121,59 @@ try {
   await command('Runtime.enable');
 
   await waitFor(
-    () => evaluate(`Boolean(
-      typeof CrComLib !== 'undefined' &&
-      document.querySelector('ch5-button[label="Front Display Power"]') &&
-      document.querySelector('ch5-button[label="Table HDMI"]') &&
-      document.querySelector('ch5-button[label="Wireless Presentation"]') &&
-      document.querySelector('ch5-slider[aria-label="Program Audio Volume"]') &&
-      document.querySelector('ch5-button[label="Program Audio Mute"]')
-    )`),
-    'generated CH5 controls'
+    () => evaluate(`typeof CrComLib !== 'undefined'`),
+    'Crestron CrComLib runtime'
   );
+
+  await evaluate(`(() => {
+    window.__phase0DeepQuery = function deepQuery(selector, root = document) {
+      if (!root) return null;
+      const direct = root.querySelector?.(selector);
+      if (direct) return direct;
+
+      const elements = root.querySelectorAll?.('*') || [];
+      for (const element of elements) {
+        if (element.shadowRoot) {
+          const nested = deepQuery(selector, element.shadowRoot);
+          if (nested) return nested;
+        }
+        if (element.tagName === 'IFRAME') {
+          try {
+            const nested = deepQuery(selector, element.contentDocument);
+            if (nested) return nested;
+          } catch {
+            // Ignore cross-origin frames; the Crestron shell content is same-origin.
+          }
+        }
+      }
+      return null;
+    };
+    return true;
+  })()`);
+
+  try {
+    await waitFor(
+      () => evaluate(`Boolean(
+        window.__phase0DeepQuery('ch5-button[label="Front Display Power"]') &&
+        window.__phase0DeepQuery('ch5-button[label="Table HDMI"]') &&
+        window.__phase0DeepQuery('ch5-button[label="Wireless Presentation"]') &&
+        window.__phase0DeepQuery('ch5-slider[aria-label="Program Audio Volume"]') &&
+        window.__phase0DeepQuery('ch5-button[label="Program Audio Mute"]')
+      )`),
+      'generated CH5 controls'
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(`(() => ({
+      title: document.title,
+      readyState: document.readyState,
+      crComLib: typeof CrComLib,
+      lightDomButtons: [...document.querySelectorAll('ch5-button')].map(el => el.getAttribute('label')),
+      lightDomSliders: [...document.querySelectorAll('ch5-slider')].map(el => el.getAttribute('aria-label')),
+      pageTextIncludesMeetingRoom: document.documentElement.innerHTML.includes('Meeting Room 101'),
+      pageHtmlLoaded: Boolean(window.__phase0DeepQuery('[data-screen-id="main"]'))
+    }))()`);
+    throw new Error(`${error.message}\nBrowser diagnostic: ${JSON.stringify(diagnostic)}`);
+  }
 
   await evaluate(`(() => {
     window.__phase0RoundTrip = {};
@@ -130,7 +188,7 @@ try {
   })()`);
 
   const clickCh5Button = async (label) => evaluate(`(() => {
-    const element = document.querySelector('ch5-button[label=${JSON.stringify(label)}]');
+    const element = window.__phase0DeepQuery('ch5-button[label=${JSON.stringify(label)}]');
     if (!element) throw new Error('Missing CH5 button: ${label}');
     const target = element.shadowRoot?.querySelector('button') || element.querySelector('button') || element;
     target.click();
@@ -173,7 +231,11 @@ try {
   }, null, 2));
 } finally {
   if (socket?.readyState === WebSocket.OPEN) socket.close();
-  if (chrome && !chrome.killed) chrome.kill('SIGTERM');
-  if (server && !server.killed) server.kill('SIGTERM');
-  rmSync(profilePath, { recursive: true, force: true });
+  await stopProcess(chrome);
+  await stopProcess(server);
+  try {
+    rmSync(profilePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
+  } catch (cleanupError) {
+    console.warn(`Browser profile cleanup warning: ${cleanupError.message}`);
+  }
 }
